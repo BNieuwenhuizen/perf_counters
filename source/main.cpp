@@ -11,497 +11,234 @@
 
 #include "sid.h"
 
+
+enum class Block {
+	grbm,
+	pa_su,
+	sq,
+	sx,
+	ta,
+	td,
+	tcp,
+	tcc,
+};
+
+enum BlockFlag {
+	BLOCK_NONE = 0,
+	BLOCK_ENGINE_INDEXED = 1,
+	BLOCK_INSTANCE_INDEXED = 2,
+};
+
+const unsigned maxCountersPerBlock = 16;
+struct BlockInfo {
+	Block block;
+	unsigned reg_count;
+	unsigned flags;
+	unsigned sel_regs[maxCountersPerBlock];
+	unsigned result_regs[maxCountersPerBlock][2];
+};
+
+struct HWCounterEntry {
+	Block block;
+	unsigned idx;
+	bool accum_prev;
+};
+
+bool operator<(const HWCounterEntry& a, const HWCounterEntry& b) {
+	if (a.block != b.block)
+		return static_cast<unsigned>(a.block) < static_cast<unsigned>(b.block);
+	if (a.idx != b.idx)
+		return a.idx < b.idx;
+	return a.accum_prev < b.accum_prev;
+}
+
+const BlockInfo gfx9_blocks[] = {
+	{Block::grbm, 2, BLOCK_NONE, {
+		R_036100_GRBM_PERFCOUNTER0_SELECT,
+		R_036104_GRBM_PERFCOUNTER1_SELECT,
+	}, {
+		{R_034100_GRBM_PERFCOUNTER0_LO, R_034104_GRBM_PERFCOUNTER0_HI},
+		{R_03410C_GRBM_PERFCOUNTER1_LO, R_034110_GRBM_PERFCOUNTER1_HI},
+	}},
+	{Block::pa_su, 4, BLOCK_ENGINE_INDEXED, {
+		R_036400_PA_SU_PERFCOUNTER0_SELECT,
+		R_036408_PA_SU_PERFCOUNTER1_SELECT,
+		R_036410_PA_SU_PERFCOUNTER2_SELECT,
+		R_036414_PA_SU_PERFCOUNTER3_SELECT,
+	}, {
+		{R_034400_PA_SU_PERFCOUNTER0_LO, R_034404_PA_SU_PERFCOUNTER0_HI},
+		{R_034408_PA_SU_PERFCOUNTER1_LO, R_03440C_PA_SU_PERFCOUNTER1_HI},
+		{R_034410_PA_SU_PERFCOUNTER2_LO, R_034414_PA_SU_PERFCOUNTER2_HI},
+		{R_034418_PA_SU_PERFCOUNTER3_LO, R_03441C_PA_SU_PERFCOUNTER3_HI},
+	}},
+	{Block::sq, 16, BLOCK_ENGINE_INDEXED, {
+		R_036700_SQ_PERFCOUNTER0_SELECT,
+		R_036704_SQ_PERFCOUNTER1_SELECT,
+		R_036708_SQ_PERFCOUNTER2_SELECT,
+		R_03670C_SQ_PERFCOUNTER3_SELECT,
+		R_036710_SQ_PERFCOUNTER4_SELECT,
+		R_036714_SQ_PERFCOUNTER5_SELECT,
+		R_036718_SQ_PERFCOUNTER6_SELECT,
+		R_03671C_SQ_PERFCOUNTER7_SELECT,
+		R_036720_SQ_PERFCOUNTER8_SELECT,
+		R_036724_SQ_PERFCOUNTER9_SELECT,
+		R_036728_SQ_PERFCOUNTER10_SELECT,
+		R_03672C_SQ_PERFCOUNTER11_SELECT,
+		R_036730_SQ_PERFCOUNTER12_SELECT,
+		R_036734_SQ_PERFCOUNTER13_SELECT,
+		R_036738_SQ_PERFCOUNTER14_SELECT,
+		R_03673C_SQ_PERFCOUNTER15_SELECT,
+	}, {
+		{R_034700_SQ_PERFCOUNTER0_LO, R_034704_SQ_PERFCOUNTER0_HI},
+		{R_034708_SQ_PERFCOUNTER1_LO, R_03470C_SQ_PERFCOUNTER1_HI},
+		{R_034710_SQ_PERFCOUNTER2_LO, R_034714_SQ_PERFCOUNTER2_HI},
+		{R_034718_SQ_PERFCOUNTER3_LO, R_03471C_SQ_PERFCOUNTER3_HI},
+		{R_034720_SQ_PERFCOUNTER4_LO, R_034724_SQ_PERFCOUNTER4_HI},
+		{R_034728_SQ_PERFCOUNTER5_LO, R_03472C_SQ_PERFCOUNTER5_HI},
+		{R_034730_SQ_PERFCOUNTER6_LO, R_034734_SQ_PERFCOUNTER6_HI},
+		{R_034738_SQ_PERFCOUNTER7_LO, R_03473C_SQ_PERFCOUNTER7_HI},
+		{R_034740_SQ_PERFCOUNTER8_LO, R_034744_SQ_PERFCOUNTER8_HI},
+		{R_034748_SQ_PERFCOUNTER9_LO, R_03474C_SQ_PERFCOUNTER9_HI},
+		{R_034750_SQ_PERFCOUNTER10_LO, R_034754_SQ_PERFCOUNTER10_HI},
+		{R_034758_SQ_PERFCOUNTER11_LO, R_03475C_SQ_PERFCOUNTER11_HI},
+		{R_034760_SQ_PERFCOUNTER12_LO, R_034764_SQ_PERFCOUNTER12_HI},
+		{R_034768_SQ_PERFCOUNTER13_LO, R_03476C_SQ_PERFCOUNTER13_HI},
+		{R_034770_SQ_PERFCOUNTER14_LO, R_034774_SQ_PERFCOUNTER14_HI},
+		{R_034778_SQ_PERFCOUNTER15_LO, R_03477C_SQ_PERFCOUNTER15_HI},
+	}},
+	{Block::sx, 4, BLOCK_ENGINE_INDEXED, {
+		R_036900_SX_PERFCOUNTER0_SELECT,
+		R_036904_SX_PERFCOUNTER1_SELECT,
+		R_036908_SX_PERFCOUNTER2_SELECT,
+		R_03690C_SX_PERFCOUNTER3_SELECT,
+	}, {
+		{R_034900_SX_PERFCOUNTER0_LO, R_034904_SX_PERFCOUNTER0_HI},
+		{R_034908_SX_PERFCOUNTER1_LO, R_03490C_SX_PERFCOUNTER1_HI},
+		{R_034910_SX_PERFCOUNTER2_LO, R_034914_SX_PERFCOUNTER2_HI},
+		{R_034918_SX_PERFCOUNTER3_LO, R_03491C_SX_PERFCOUNTER3_HI},
+	}},
+	{Block::ta, 2, BLOCK_ENGINE_INDEXED | BLOCK_INSTANCE_INDEXED, {
+		R_036B00_TA_PERFCOUNTER0_SELECT,
+		R_036B08_TA_PERFCOUNTER1_SELECT,
+	}, {
+		{R_034B00_TA_PERFCOUNTER0_LO, R_034B04_TA_PERFCOUNTER0_HI},
+		{R_034B08_TA_PERFCOUNTER1_LO, R_034B0C_TA_PERFCOUNTER1_HI},
+	}},
+	{Block::tcp, 4, BLOCK_INSTANCE_INDEXED, {
+		R_036D00_TCP_PERFCOUNTER0_SELECT,
+		R_036D08_TCP_PERFCOUNTER1_SELECT,
+		R_036D10_TCP_PERFCOUNTER2_SELECT,
+		R_036D14_TCP_PERFCOUNTER3_SELECT,
+	}, {
+		{R_034D00_TCP_PERFCOUNTER0_LO, R_034D04_TCP_PERFCOUNTER0_HI},
+		{R_034D08_TCP_PERFCOUNTER1_LO, R_034D0C_TCP_PERFCOUNTER1_HI},
+		{R_034D10_TCP_PERFCOUNTER2_LO, R_034D14_TCP_PERFCOUNTER2_HI},
+		{R_034D18_TCP_PERFCOUNTER3_LO, R_034D1C_TCP_PERFCOUNTER3_HI},
+	}},
+	{Block::tcc, 4, BLOCK_INSTANCE_INDEXED, {
+		R_036E00_TCC_PERFCOUNTER0_SELECT,
+		R_036E08_TCC_PERFCOUNTER1_SELECT,
+		R_036E10_TCC_PERFCOUNTER2_SELECT,
+		R_036E14_TCC_PERFCOUNTER3_SELECT,
+	}, {
+		{R_034E00_TCC_PERFCOUNTER0_LO, R_034E04_TCC_PERFCOUNTER0_HI},
+		{R_034E08_TCC_PERFCOUNTER1_LO, R_034E0C_TCC_PERFCOUNTER1_HI},
+		{R_034E10_TCC_PERFCOUNTER2_LO, R_034E14_TCC_PERFCOUNTER2_HI},
+		{R_034E18_TCC_PERFCOUNTER3_LO, R_034E1C_TCC_PERFCOUNTER3_HI},
+	}},
+};
+
+const BlockInfo& find_block(Block b)
+{
+	for(const auto& block : gfx9_blocks)
+		if (block.block == b)
+			return block;
+}
+
+void insert_config_reg(unsigned reg, std::uint32_t value, unsigned flags, 
+		       std::map<std::uint32_t, std::map<unsigned, std::uint32_t>>& reg_config)
+{
+	for(unsigned se = 0; se < ((flags & BLOCK_ENGINE_INDEXED) ? 4 : 1); ++se) {
+		for(unsigned instance = 0; instance < ((flags & BLOCK_INSTANCE_INDEXED) ? 16 : 1); ++instance) {
+			unsigned grbm_config = S_030800_SH_BROADCAST_WRITES(1);
+			grbm_config = (flags & BLOCK_ENGINE_INDEXED) ? S_030800_SE_INDEX(se) : S_030800_SE_BROADCAST_WRITES(1);
+			grbm_config = (flags & BLOCK_INSTANCE_INDEXED) ? S_030800_INSTANCE_INDEX(instance) : S_030800_INSTANCE_BROADCAST_WRITES(1);
+			reg_config[grbm_config][reg] = value;
+		}
+	}
+}
+
+void extract_sample_values(unsigned reg, std::uint32_t offset, unsigned flags,
+			   std::map<std::uint32_t, std::map<unsigned, std::uint32_t>>& sample_map)
+{
+	for(unsigned se = 0; se < ((flags & BLOCK_ENGINE_INDEXED) ? 4 : 1); ++se) {
+		for(unsigned instance = 0; instance < ((flags & BLOCK_INSTANCE_INDEXED) ? 16 : 1); ++instance) {
+			unsigned grbm_config = S_030800_SH_BROADCAST_WRITES(1);
+			grbm_config = (flags & BLOCK_ENGINE_INDEXED) ? S_030800_SE_INDEX(se) : S_030800_SE_BROADCAST_WRITES(1);
+			grbm_config = (flags & BLOCK_INSTANCE_INDEXED) ? S_030800_INSTANCE_INDEX(instance) : S_030800_INSTANCE_BROADCAST_WRITES(1);
+			sample_map[grbm_config][reg] = offset;
+			offset += 8;
+		}
+	}
+}
+
+void ComputeHwConfiguration(const std::set<HWCounterEntry>& entries,
+			    std::map<std::uint32_t, std::map<unsigned, std::uint32_t>>& reg_config,
+			    std::map<std::uint32_t, std::map<unsigned, std::uint32_t>>& sample_map,
+			    std::map<HWCounterEntry, std::pair<unsigned, unsigned>>& entry_map,
+			    uint64_t& size)
+{
+	std::map<Block, unsigned> block_count;
+	unsigned offset = 0;
+	for(auto entry : entries) {
+		const BlockInfo& info = find_block(entry.block);
+		unsigned& block_idx = block_count[entry.block];
+		unsigned value_count = ((info.flags & BLOCK_ENGINE_INDEXED) ? 4 : 1) * ((info.flags & BLOCK_INSTANCE_INDEXED) ? 16 : 1);
+
+		unsigned extra_val = 0;
+		if (entry.block == Block::sq) {
+			extra_val = S_036700_SQC_BANK_MASK(15) | S_036700_SQC_CLIENT_MASK(15) |
+				S_036700_SIMD_MASK(15);
+		}
+		
+
+		if (block_idx >= info.reg_count)
+			abort();
+		insert_config_reg(info.sel_regs[block_idx], entry.idx | extra_val, info.flags, reg_config);
+		if (entry.accum_prev) {
+			++block_idx;
+			if (block_idx >= info.reg_count)
+				abort();
+			insert_config_reg(info.sel_regs[block_idx], 1 | extra_val, info.flags, reg_config);
+		}
+
+		entry_map[entry] = {offset, value_count};
+
+		extract_sample_values(info.result_regs[block_idx][0], offset * 8, info.flags, sample_map);
+		extract_sample_values(info.result_regs[block_idx][1], offset * 8 + 4, info.flags, sample_map);
+		++block_idx;
+		offset += value_count;
+	}
+
+	size = offset * 8;
+}
+
 void EmitUConfigRegs(NativeCommandBuffer &cmd_buffer, std::uint32_t reg,
                      std::uint32_t count) {
   cmd_buffer.Emit(PKT3(PKT3_SET_UCONFIG_REG, count, 0));
   cmd_buffer.Emit((reg - CIK_UCONFIG_REG_OFFSET) >> 2);
 }
 
-struct SQPerfCounterInfo {
-  unsigned selector;
-};
-
-std::map<std::string, SQPerfCounterInfo> const all_sq_perf_counters = {
-    {"sq_cycles", {0x2}},
-    {"sq_busy_cycles", {0x3}},
-    {"sq_waves", {0x4}},
-    {"sq_busy_cu_cycles", {0xd}},
-    {"sq_items", {0xe}},
-    {"sq_quads", {0xf}},
-    {"sq_events", {0x10}},
-    {"sq_surf_syncs", {0x11}},
-    {"sq_insts", {0x19}},
-    {"sq_insts_valu", {0x1a}},
-    {"sq_insts_vmem_wr", {0x1b}},
-    {"sq_insts_vmem_rd", {0x1c}},
-    {"sq_insts_vmem", {0x1d}},
-    {"sq_insts_salu", {0x1e}},
-    {"sq_insts_smem", {0x1f}},
-    {"sq_insts_flat", {0x20}},
-    {"sq_insts_flat_lds_only", {0x21}},
-    {"sq_insts_lds", {0x22}},
-    {"sq_insts_gds", {0x23}},
-    {"sq_insts_exp", {0x24}},
-    {"sq_insts_exp_gds", {0x25}},
-    {"sq_insts_branch", {0x26}},
-    {"sq_insts_sendmsg", {0x27}},
-    {"sq_insts_vskipped", {0x28}},
-    {"sq_wait_cnt_vm", {0x30}},
-    {"sq_wait_cnt_lgkm", {0x31}},
-    {"sq_wait_cnt_exp", {0x32}},
-    {"sq_wait_cnt_any", {0x33}},
-    {"sq_wait_barrier", {0x34}},
-    {"sq_wait_exp_alloc", {0x35}},
-    {"sq_wait_sleep", {0x36}},
-    {"sq_wait_other", {0x37}},
-    {"sq_wait_any", {0x38}},
-    {"sq_wait_ttrace", {0x39}},
-    {"sq_wait_ifetch", {0x3a}},
-    {"sq_wait_inst_vmem", {0x3b}},
-    {"sq_wait_inst_sca", {0x3c}},
-    {"sq_wait_inst_lds", {0x3d}},
-    {"sq_wait_inst_valu", {0x3e}},
-    {"sq_wait_inst_exp_gds", {0x3f}},
-    {"thread_cycles_valu", {0x59}},
-    {"thread_cycles_valu_max", {0x5a}},
-    {"sq_valu_dep_stall", {0x67}},
-    {"sq_valu_starve", {0x68}},
-    {"sq_exp_req_fifo_full", {0x69}},
-    {"sq_vmem_back2back_stall", {0x6d}},
-    {"sq_vmem_ta_addr_fifo_full", {0x6e}},
-    {"sq_vmem_ta_cmd_fifo_full", {0x6f}},
-    {"sqc_tc_req", {0xae}},
-    {"sqc_tc_data_read_req", {0xb0}},
-    {"sqc_tc_stall", {0xb3}},
-    {"sqc_tc_starve", {0xb4}},
-    {"sq_dcache_req", {0xc7}},
-    {"sq_dcache_hits", {0xc8}},
-
-};
-
-class CounterInterface {
-public:
-  virtual ~CounterInterface() {}
-  virtual void Configure(NativeCommandBuffer& cb) const = 0;
-  virtual void ExtractData(NativeCommandBuffer& cb, std::uint64_t va) const = 0;
-  virtual std::size_t GetBufferSize() const = 0;
-  virtual void PrintDifference(const void *old_data, const void* new_data, double time_delta, std::ostream& os) const = 0;
-};
-
-std::string HumanRate(double v) {
-	if (v >= 1e18)
-		return std::to_string(v / 1e18) + " E/s";
-	if (v >= 1e15)
-		return std::to_string(v / 1e15) + " P/s";
-	if (v >= 1e12)
-		return std::to_string(v / 1e12) + " T/s";
-	if (v >= 1e9)
-		return std::to_string(v / 1e9) + " G/s";
-	else if (v >= 1e6)
-		return std::to_string(v / 1e6) + " M/s";
-	else if (v >= 1e3)
-		return std::to_string(v / 1e3) + " K/s";
-	else
-		return std::to_string(v) + " 1/s";
-}
-
-class SQCounters  : public CounterInterface {
-public:
-  SQCounters(std::set<std::string>& counters) {
-	  shader_mask = 0x7f;
-	  for (auto e : all_sq_perf_counters) {
-		  auto it = counters.find(e.first);
-		  if (it != counters.end()) {
-			  counters.erase(it);
-			  counter_names.push_back(e.first);
-			  counter_selectors.push_back(e.second);
-		  }
-	  }
-  }
-
-  void Configure(NativeCommandBuffer& cb) const override {
-    if (counter_selectors.empty())
-      return;
-
-    EmitUConfigRegs(cb, R_036780_SQ_PERFCOUNTER_CTRL, 2);
-    cb.Emit(shader_mask);
-    cb.Emit(0xFFFFFFFFU);
-
-    EmitUConfigRegs(cb, R_036700_SQ_PERFCOUNTER0_SELECT, counter_selectors.size());
-    for (auto e : counter_selectors) {
-      cb.Emit(S_036700_SQC_BANK_MASK(15) | S_036700_SQC_CLIENT_MASK(15) |
-              S_036700_SIMD_MASK(15) |
-              S_036700_PERF_SEL(e.selector));
-    }
-  }
-  void ExtractData(NativeCommandBuffer& cb, std::uint64_t va) const override {
-    for (int i = 0; i < 4; ++i) {
-      EmitUConfigRegs(cb, R_030800_GRBM_GFX_INDEX, 1);
-      cb.Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_SE_INDEX(i) |
-              S_030800_INSTANCE_BROADCAST_WRITES(1));
-      for(unsigned j = 0; j < counter_names.size(); ++j) {
-        auto dst_va = va + 32 * j + 8 * i;
-        cb.Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
-        cb.Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
-        cb.Emit((R_034700_SQ_PERFCOUNTER0_LO + 8 * j) >> 2);
-        cb.Emit(0); /* unused */
-        cb.Emit(dst_va);
-        cb.Emit(dst_va >> 32);
-
-        cb.Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
-        cb.Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
-        cb.Emit((R_034700_SQ_PERFCOUNTER0_LO + 8 * j + 4) >> 2);
-        cb.Emit(0); /* unused */
-        cb.Emit((dst_va + 4));
-        cb.Emit((dst_va + 4) >> 32);
-      }
-    }
-  }
-  std::size_t GetBufferSize() const override {
-	  return 32 * counter_names.size();
-  }
-  void PrintDifference(const void *old_data, const void* new_data, double time_delta, std::ostream& os) const override {
-    const std::uint64_t *old_counters = (const std::uint64_t*)old_data;
-    const std::uint64_t *new_counters = (const std::uint64_t*)new_data;
-    for(unsigned j = 0; j < counter_names.size(); ++j) {
-      uint64_t cnt = 0;
-      for (unsigned i = 0; i < 4; ++i) {
-	      cnt += new_counters[4 * j + i] - old_counters[4 * j + i];
-      }
-      auto delta = cnt / time_delta;
-      os << "   " << counter_names[j] << " : " << HumanRate(delta) << "\n";
-    }
-  }
-private:
-  uint32_t shader_mask;
-  std::vector<std::string> counter_names;
-  std::vector<SQPerfCounterInfo> counter_selectors;
-};
-
-
-static std::vector<std::pair<std::string, std::uint32_t>> all_spi_perf_counters = {
-  {"spi_vs_window_valid", 0x0},
-  {"spi_vs_busy", 0x1},
-  {"spi_vs_first_wave", 0x2},
-  {"spi_vs_last_wave", 0x3},
-  {"spi_vs_lshs_dealloc", 0x4},
-  {"spi_vs_pc_stall", 0x5},
-  {"spi_vs_pos0_stall", 0x6},
-  {"spi_vs_pos1_stall", 0x7},
-  {"spi_vs_crawler_stall", 0x8},
-  {"spi_vs_event_wave", 0x9},
-  {"spi_vs_wave", 0xa},
-  {"spi_vs_pers_upd_full0", 0xb},
-  {"spi_vs_pers_upd_full1", 0xc},
-  {"spi_vs_late_alloc_full", 0xd},
-  {"spi_vs_first_subgrp", 0xe},
-  {"spi_vs_last_subgrp", 0xf},
-  {"spi_gs_window_valid", 0x10},
-  {"spi_csg_window_valid", 0x39},
-  {"spi_csg_busy", 0x3a},
-  {"spi_csg_num_threadgroups", 0x3b},
-  {"spi_csg_crawler_stall", 0x3c},
-  {"spi_csg_event_wave", 0x3d},
-  {"spi_csg_wave", 0x3e},
-  {"spi_csn_window_valid", 0x3f},
-  {"spi_csn_busy", 0x40},
-  {"spi_csn_num_threadgroups", 0x41},
-  {"spi_csn_crawler_stall", 0x42},
-  {"spi_csn_event_wave", 0x43},
-  {"spi_csn_wave", 0x44},
-  {"spi_pix_alloc_scb_stall", 0x59},
-  {"spi_pix_alloc_db0_stall", 0x5a},
-  {"spi_pix_alloc_db1_stall", 0x5b},
-  {"spi_pix_alloc_db2_stall", 0x5c},
-  {"spi_pix_alloc_db3_stall", 0x5d},
-};
-
-class SPICounters  : public CounterInterface {
-public:
-  SPICounters(std::set<std::string>& counters) {
-	  for (auto e : all_spi_perf_counters) {
-		  auto it = counters.find(e.first);
-		  if (it != counters.end()) {
-			  counters.erase(it);
-			  counter_names.push_back(e.first);
-			  counter_selectors.push_back(e.second);
-		  }
-	  }
-  }
-
-  void Configure(NativeCommandBuffer& cb) const override {
-    if (counter_selectors.empty())
-      return;
-
-    EmitUConfigRegs(cb, R_036600_SPI_PERFCOUNTER0_SELECT, counter_selectors.size());
-    for (unsigned i = 0; i < 4 && i < counter_selectors.size(); ++i) {
-      cb.Emit(counter_selectors[i]);
-    }
-    if (counter_selectors.size() > 4)
-      EmitUConfigRegs(cb, R_036620_SPI_PERFCOUNTER4_SELECT, counter_selectors.size());
-    for (unsigned i = 4; i < 6 && i < counter_selectors.size(); ++i) {
-      cb.Emit(counter_selectors[i]);
-    }
-  }
-  void ExtractData(NativeCommandBuffer& cb, std::uint64_t va) const override {
-    if (counter_selectors.empty())
-      return;
-    for (int i = 0; i < 4; ++i) {
-      EmitUConfigRegs(cb, R_030800_GRBM_GFX_INDEX, 1);
-      cb.Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_SE_INDEX(i) |
-              S_030800_INSTANCE_BROADCAST_WRITES(1));
-      for(unsigned j = 0; j < counter_names.size(); ++j) {
-        auto dst_va = va + 32 * j + 8 * i;
-        cb.Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
-        cb.Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
-        cb.Emit((R_034604_SPI_PERFCOUNTER0_LO + 8 * j) >> 2);
-        cb.Emit(0); /* unused */
-        cb.Emit(dst_va);
-        cb.Emit(dst_va >> 32);
-
-        cb.Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
-        cb.Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
-        cb.Emit((R_034600_SPI_PERFCOUNTER0_HI + 8 * j + 4) >> 2);
-        cb.Emit(0); /* unused */
-        cb.Emit((dst_va + 4));
-        cb.Emit((dst_va + 4) >> 32);
-      }
-    }
-  }
-  std::size_t GetBufferSize() const override {
-	  return 32 * counter_names.size();
-  }
-  void PrintDifference(const void *old_data, const void* new_data, double time_delta, std::ostream& os) const override {
-    const std::uint64_t *old_counters = (const std::uint64_t*)old_data;
-    const std::uint64_t *new_counters = (const std::uint64_t*)new_data;
-    for(unsigned j = 0; j < counter_names.size(); ++j) {
-      uint64_t cnt = 0;
-      for (unsigned i = 0; i < 4; ++i) {
-	      cnt += new_counters[4 * j + i] - old_counters[4 * j + i];
-      }
-      auto delta = cnt / time_delta;
-      os << "   " << counter_names[j] << " : " << HumanRate(delta) << "\n";
-    }
-  }
-private:
-  std::vector<std::string> counter_names;
-  std::vector<uint32_t> counter_selectors;
-};
-
-static std::vector<std::pair<std::string, std::uint32_t>> all_tcc_perf_counters = {
-	{"tcc_cycle", {0x1}},
-	{"tcc_busy", {0x2}},
-	{"tcc_req", {0x3}},
-	{"tcc_read", {0x5}},
-	{"tcc_hit", {0x14}},
-	{"tcc_miss", {0x16}},
-	{"tcc_latency_fifo_full", {0x17}},
-	{"tcc_src_fifo_full", {0x18}},
-	{"tcc_hole_fifo_full", {0x19}},
-	{"tcc_client0_req", {0x80}},
-	{"tcc_client1_req", {0x81}},
-	{"tcc_client127_req", {0xff}},
-};
-
-
-class TCCCounters  : public CounterInterface {
-public:
-  TCCCounters(std::set<std::string>& counters) {
-	  for (auto e : all_tcc_perf_counters) {
-		  auto it = counters.find(e.first);
-		  if (it != counters.end()) {
-			  counters.erase(it);
-			  counter_names.push_back(e.first);
-			  counter_selectors.push_back(e.second);
-		  }
-	  }
-  }
-
-  void Configure(NativeCommandBuffer& cb) const override {
-
-    if (counter_selectors.empty())
-      return;
-    std::array<unsigned, 4> selectors = {
-	    R_036E00_TCC_PERFCOUNTER0_SELECT,
-	    R_036E08_TCC_PERFCOUNTER1_SELECT,
-	    R_036E10_TCC_PERFCOUNTER2_SELECT,
-	    R_036E14_TCC_PERFCOUNTER3_SELECT
-    };
-
-    for (unsigned j = 0; j < 16; ++j) {
-      EmitUConfigRegs(cb, R_030800_GRBM_GFX_INDEX, 1);
-      cb.Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_INSTANCE_INDEX(j) |
-              S_030800_SE_BROADCAST_WRITES(1));
-      for (unsigned i = 0; i < counter_selectors.size(); ++i) {
-        EmitUConfigRegs(cb, selectors[i], 1);
-        cb.Emit(counter_selectors[i]);
-      }
-    }
-
-    EmitUConfigRegs(cb, R_030800_GRBM_GFX_INDEX, 1);
-    cb.Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_SE_BROADCAST_WRITES(1) |
-              S_030800_INSTANCE_BROADCAST_WRITES(1));
-
-  }
-  void ExtractData(NativeCommandBuffer& cb, std::uint64_t va) const override {
-    if (counter_selectors.empty())
-      return;
-
-    for (int i = 0; i < 16; ++i) {
-      EmitUConfigRegs(cb, R_030800_GRBM_GFX_INDEX, 1);
-      cb.Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_INSTANCE_INDEX(i) |
-              S_030800_SE_BROADCAST_WRITES(1));
-      for(unsigned j = 0; j < counter_names.size(); ++j) {
-        auto dst_va = va + 128 * j + 8 * i;
-        cb.Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
-        cb.Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
-        cb.Emit((R_034E00_TCC_PERFCOUNTER0_LO + 8 * j) >> 2);
-        cb.Emit(0); /* unused */
-        cb.Emit(dst_va);
-        cb.Emit(dst_va >> 32);
-
-        cb.Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
-        cb.Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
-        cb.Emit((R_034E04_TCC_PERFCOUNTER0_HI + 8 * j) >> 2);
-        cb.Emit(0); /* unused */
-        cb.Emit((dst_va + 4));
-        cb.Emit((dst_va + 4) >> 32);
-      }
-    }
-  }
-  std::size_t GetBufferSize() const override {
-	  return 128 * counter_names.size();
-  }
-  void PrintDifference(const void *old_data, const void* new_data, double time_delta, std::ostream& os) const override {
-    const std::uint64_t *old_counters = (const std::uint64_t*)old_data;
-    const std::uint64_t *new_counters = (const std::uint64_t*)new_data;
-    for(unsigned j = 0; j < counter_names.size(); ++j) {
-      double cnt = 0;
-      for (unsigned i = 0; i < 16; ++i) {
-	      cnt += new_counters[16 * j + i] - old_counters[16 * j + i];
-      }
-      auto delta = cnt / time_delta;
-      os << "   " << counter_names[j] << " : " << HumanRate(delta) << "(";
-      for (int i = 0; i < 16; ++i) {
-	      if (i)
-		      os << " ";
-	      os << HumanRate((new_counters[16 * j + i] - old_counters[16 * j + i]) / time_delta);
-      }
-      os << ")\n";
-    }
-  }
-private:
-  std::vector<std::string> counter_names;
-  std::vector<uint32_t> counter_selectors;
-};
-
-static std::vector<std::pair<std::string, std::uint32_t>> all_grbm_perf_counters = {
-	{"grbm_count", {0x0}},
-	{"grbm_gui_active", {0x2}},
-	{"grbm_sc_busy", {0x9}},
-	{"grbm_spi_busy", {0xb}},
-	{"grbm_tc_busy", {0x1c}},
-};
-
-
-class GRBMCounters  : public CounterInterface {
-public:
-  GRBMCounters(std::set<std::string>& counters) {
-	  for (auto e : all_grbm_perf_counters) {
-		  auto it = counters.find(e.first);
-		  if (it != counters.end()) {
-			  counters.erase(it);
-			  counter_names.push_back(e.first);
-			  counter_selectors.push_back(e.second);
-		  }
-	  }
-	  if (counter_selectors.size () > 2)
-		  abort();
-  }
-
-  void Configure(NativeCommandBuffer& cb) const override {
-
-    if (counter_selectors.empty())
-      return;
-    std::array<unsigned, 4> selectors = {
-	    R_036100_GRBM_PERFCOUNTER0_SELECT,
-	    R_036104_GRBM_PERFCOUNTER1_SELECT,
-    };
-
-    for (unsigned i = 0; i < counter_selectors.size(); ++i) {
-      EmitUConfigRegs(cb, selectors[i], 1);
-      cb.Emit(counter_selectors[i]);
-    }
-
-  }
-  void ExtractData(NativeCommandBuffer& cb, std::uint64_t va) const override {
-    if (counter_selectors.empty())
-      return;
-
-    const uint32_t regs[] = {
-	    R_034100_GRBM_PERFCOUNTER0_LO,
-	    R_03410C_GRBM_PERFCOUNTER1_LO
-    };
-    EmitUConfigRegs(cb, R_030800_GRBM_GFX_INDEX, 1);
-    cb.Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_INSTANCE_BROADCAST_WRITES(1) |
-            S_030800_SE_BROADCAST_WRITES(1));
-    for(unsigned j = 0; j < counter_names.size(); ++j) {
-      auto dst_va = va + 8 * j;
-      cb.Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
-      cb.Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
-      cb.Emit((regs[j]) >> 2);
-      cb.Emit(0); /* unused */
-      cb.Emit(dst_va);
-      cb.Emit(dst_va >> 32);
-
-      cb.Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
-      cb.Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
-      cb.Emit((regs[j] + 4) >> 2);
-      cb.Emit(0); /* unused */
-      cb.Emit((dst_va + 4));
-      cb.Emit((dst_va + 4) >> 32);
-    }
-  }
-  std::size_t GetBufferSize() const override {
-	  return 8 * counter_names.size();
-  }
-  void PrintDifference(const void *old_data, const void* new_data, double time_delta, std::ostream& os) const override {
-    const std::uint64_t *old_counters = (const std::uint64_t*)old_data;
-    const std::uint64_t *new_counters = (const std::uint64_t*)new_data;
-    for(unsigned j = 0; j < counter_names.size(); ++j) {
-      double cnt = new_counters[j] - old_counters[j];
-      auto delta = cnt / time_delta;
-      os << "   " << counter_names[j] << " : " << HumanRate(delta) << "\n";
-    }
-  }
-private:
-  std::vector<std::string> counter_names;
-  std::vector<uint32_t> counter_selectors;
-};
-
-
-struct CounterConfig {
-  unsigned shader_mask = 0x7f;
-  std::vector<std::string> counters;
-};
 
 #define EVENT_TYPE_SAMPLE_PIPELINESTAT 30
 #define EVENT_TYPE_PERFCOUNTER_START 0x17
 #define EVENT_TYPE_PERFCOUNTER_STOP 0x18
 #define EVENT_TYPE_PERFCOUNTER_SAMPLE 0x1B
 
-template <typename S, typename T>
-std::size_t CountCounters(const S &counters, const T &set) {
-  std::size_t ret = 0;
-  for (auto &&e : counters)
-    if (set.find(e) != set.end())
-      ++ret;
-  return ret;
-}
 
 template <typename D>
 std::unique_ptr<NativeCommandBuffer>
-BuildStartBuffer(D &&device, const CounterConfig &config, const std::vector<CounterInterface*>& counters) {
+BuildStartBuffer(D &&device, const std::map<std::uint32_t, std::map<unsigned, std::uint32_t>>& reg_config) {
   auto ncb =
       std::make_unique<NativeCommandBuffer>(device, drm::HwType::kGfx);
 
@@ -511,8 +248,30 @@ BuildStartBuffer(D &&device, const CounterConfig &config, const std::vector<Coun
   EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
   ncb->Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_SE_BROADCAST_WRITES(1) |
             S_030800_INSTANCE_BROADCAST_WRITES(1));
-  for(auto c : counters)
-	  c->Configure(*ncb);
+
+  for (auto&& entry : reg_config) {
+	EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
+	ncb->Emit(entry.first);
+
+	for (auto b = entry.second.begin(); b != entry.second.end(); ) {
+		auto e = b;
+		unsigned next_addr = b->first + 4;
+		++e;
+		while (e != entry.second.end() && e->first == next_addr) {
+			++e;
+			next_addr += 4;
+		}
+
+		EmitUConfigRegs(*ncb, b->first, std::distance(b, e));
+		for (auto it = b; it != e; ++it)
+			ncb->Emit(it->second);
+		b = e;
+	}
+  }
+
+  EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
+  ncb->Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_SE_BROADCAST_WRITES(1) |
+            S_030800_INSTANCE_BROADCAST_WRITES(1));
 
   EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
   ncb->Emit(S_036020_PERFMON_STATE(V_036020_DISABLE_AND_RESET));
@@ -524,8 +283,31 @@ BuildStartBuffer(D &&device, const CounterConfig &config, const std::vector<Coun
   EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
   ncb->Emit(S_036020_PERFMON_STATE(V_036020_START_COUNTING) |
             S_036020_PERFMON_SAMPLE_ENABLE(1));
- for(auto c : counters)
-	  c->Configure(*ncb);
+
+  for (auto&& entry : reg_config) {
+	EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
+	ncb->Emit(entry.first);
+
+	for (auto b = entry.second.begin(); b != entry.second.end(); ) {
+		auto e = b;
+		unsigned next_addr = b->first + 4;
+		++e;
+		while (e != entry.second.end() && e->first == next_addr) {
+			++e;
+			next_addr += 4;
+		}
+
+		EmitUConfigRegs(*ncb, b->first, std::distance(b, e));
+		for (auto it = b; it != e; ++it)
+			ncb->Emit(it->second);
+		b = e;
+	}
+  }
+
+  EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
+  ncb->Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_SE_BROADCAST_WRITES(1) |
+            S_030800_INSTANCE_BROADCAST_WRITES(1));
+
   ncb->FinishRecording();
   return ncb;
 }
@@ -533,13 +315,13 @@ BuildStartBuffer(D &&device, const CounterConfig &config, const std::vector<Coun
 template <typename D>
 std::unique_ptr<NativeCommandBuffer>
 BuildSampleBuffer(D &&device, NativeBuffer &buffer,
-                  const CounterConfig &config, const std::vector<CounterInterface*>& counters) {
+                  const std::map<std::uint32_t, std::map<unsigned, std::uint32_t>>& sample_map) {
   auto ncb =
       std::make_unique<NativeCommandBuffer>(device, drm::HwType::kGfx);
   ncb->StartRecording();
 
   EmitUConfigRegs(*ncb, R_036780_SQ_PERFCOUNTER_CTRL, 2);
-  ncb->Emit(config.shader_mask);
+  ncb->Emit(0x7f);
   ncb->Emit(0xFFFFFFFFU);
 
   EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
@@ -555,9 +337,19 @@ BuildSampleBuffer(D &&device, NativeBuffer &buffer,
 
   ncb->AddBuffer(buffer.Handle());
   uint64_t va = buffer.Address();
-  for(auto c : counters) {
-	  c->ExtractData(*ncb, va);
-	  va += c->GetBufferSize();
+  for(auto&& entry : sample_map) {
+	EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
+	ncb->Emit(entry.first);
+
+	for (auto e : entry.second) {
+		auto dst_va = va + e.second;
+		ncb->Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
+		ncb->Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
+		ncb->Emit(e.first >> 2);
+		ncb->Emit(0); /* unused */
+		ncb->Emit(dst_va);
+		ncb->Emit(dst_va >> 32);
+	}
   }
 
   EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
@@ -567,42 +359,210 @@ BuildSampleBuffer(D &&device, NativeBuffer &buffer,
   return ncb;
 }
 
+class CounterInterface  {
+public:
+	CounterInterface(const std::string& name, const std::string& description) : name_{name}, description_{description} {}
+	virtual ~CounterInterface();
+
+	std::string const& name() const { return name_; }
+	std::string const& description() const { return description_; }
+
+	virtual void register_counters(std::set<HWCounterEntry>& entries) const = 0;
+	virtual double get_results(std::map<HWCounterEntry, std::pair<unsigned, unsigned>> const& entry_map, const uint64_t *old_p, const uint64_t *new_p) const = 0;
+private:
+	std::string name_;
+	std::string description_;
+};
+
+CounterInterface::~CounterInterface() {}
+
+class SumCounter : public CounterInterface{
+public:
+	SumCounter(const std::string& name, const std::string& description, HWCounterEntry entry) : CounterInterface(name, description), entry_{entry} {}
+
+	void register_counters(std::set<HWCounterEntry>& entries) const
+	{
+		entries.insert(entry_);
+	}
+
+	double get_results(std::map<HWCounterEntry, std::pair<unsigned, unsigned>> const& entry_map, const uint64_t *old_p, const uint64_t *new_p) const
+	{
+		auto it = entry_map.find(entry_);
+		assert(it != entry_map.end());
+
+		double v = 0;
+		for(unsigned i = 0; i < it->second.second; ++i) {
+			double v2 = new_p[it->second.first + i] - old_p[it->second.first + i];
+			v += v2;
+		}
+		return v;
+	}
+private:
+	HWCounterEntry entry_;
+};
+
+class MaxCounter : public CounterInterface{
+public:
+	MaxCounter(const std::string& name, const std::string& description, HWCounterEntry entry) : CounterInterface(name, description), entry_{entry} {}
+
+	void register_counters(std::set<HWCounterEntry>& entries) const
+	{
+		entries.insert(entry_);
+	}
+
+	double get_results(std::map<HWCounterEntry, std::pair<unsigned, unsigned>> const& entry_map, const uint64_t *old_p, const uint64_t *new_p) const
+	{
+		auto it = entry_map.find(entry_);
+		assert(it != entry_map.end());
+
+		double v = 0;
+		for(unsigned i = 0; i < it->second.second; ++i) {
+			double v2 = new_p[it->second.first + i] - old_p[it->second.first + i];
+			v = std::max(v, v2);
+		}
+		return v;
+	}
+private:
+	HWCounterEntry entry_;
+};
+
+class DivMaxCounter : public CounterInterface{
+public:
+	DivMaxCounter(const std::string& name, const std::string& description, HWCounterEntry a, HWCounterEntry b) : CounterInterface(name, description), a_{a}, b_{b} {}
+
+	void register_counters(std::set<HWCounterEntry>& entries) const
+	{
+		entries.insert(a_);
+		entries.insert(b_);
+	}
+
+	double get_results(std::map<HWCounterEntry, std::pair<unsigned, unsigned>> const& entry_map, const uint64_t *old_p, const uint64_t *new_p) const
+	{
+		auto it = entry_map.find(a_);
+		assert(it != entry_map.end());
+
+		double a = 0;
+		for(unsigned i = 0; i < it->second.second; ++i) {
+			double v2 = new_p[it->second.first + i] - old_p[it->second.first + i];
+			a = std::max(a, v2);
+		}
+
+		it = entry_map.find(b_);
+		assert(it != entry_map.end());
+
+		double b = 0;
+		for(unsigned i = 0; i < it->second.second; ++i) {
+			double v2 = new_p[it->second.first + i] - old_p[it->second.first + i];
+			b = std::max(b, v2);
+		}
+		return a / std::max(b, 1.0) * 100;
+	}
+private:
+	HWCounterEntry a_, b_;
+};
+
+class DivSumCounter : public CounterInterface{
+public:
+	DivSumCounter(const std::string& name, const std::string& description, HWCounterEntry a, HWCounterEntry b, double extra_factor = 1.0) : CounterInterface(name, description), a_{a}, b_{b}, extra_factor_{extra_factor} {}
+
+	void register_counters(std::set<HWCounterEntry>& entries) const
+	{
+		entries.insert(a_);
+		entries.insert(b_);
+	}
+
+	double get_results(std::map<HWCounterEntry, std::pair<unsigned, unsigned>> const& entry_map, const uint64_t *old_p, const uint64_t *new_p) const
+	{
+		auto it = entry_map.find(a_);
+		assert(it != entry_map.end());
+
+		double a = 0;
+		for(unsigned i = 0; i < it->second.second; ++i) {
+			double v2 = new_p[it->second.first + i] - old_p[it->second.first + i];
+			a += v2;
+		}
+
+		it = entry_map.find(b_);
+		assert(it != entry_map.end());
+
+		double b = 0;
+		for(unsigned i = 0; i < it->second.second; ++i) {
+			double v2 = new_p[it->second.first + i] - old_p[it->second.first + i];
+			b += v2;
+		}
+		return a / std::max(b, 1.0) * 100 * extra_factor_;
+	}
+private:
+	HWCounterEntry a_, b_;
+	double extra_factor_;
+};
+
+
+CounterInterface *counter_list[] = {
+	new MaxCounter("gui_active", "Amount of cycles the GPU is busy.", {Block::grbm, 2, false}),
+	new MaxCounter("sq_busy_cycles", "Amount of cycles the SQ unit is busy.", {Block::sq, 3, false}),
+	new DivMaxCounter("mem_unit_busy", "The percentage of the time the memory unit is busy, including stalls.", {Block::ta, 0xf, false}, {Block::grbm, 2, false}),
+	new DivMaxCounter("mem_unit_stalled", "The percentage of the time the memory unit is stalled.", {Block::tcp, 0x6, false}, {Block::grbm, 2, false}),
+	new DivMaxCounter("pixel_export_stalled", "The percentage of the time the memory unit is stalled.", {Block::sx, 0xe, false}, {Block::grbm, 2, false}), // Hack, need 4 counters for full view
+	new DivMaxCounter("primitive_assembly_stalled_on_rasterizer", "The percentage of the time the memory unit is stalled.", {Block::pa_su, 0x6d, false}, {Block::grbm, 2, false}),
+	new DivSumCounter("cu_busy", "The percentage of the time the memory unit is stalled.", {Block::sq, 0xd, false}, {Block::grbm, 2, false}, 4.0/64.0),
+	new DivSumCounter("valu_busy", "The percentage of the time the memory unit is stalled.", {Block::sq, 0x47, false}, {Block::sq, 0xd, false}),
+	new DivSumCounter("valu_starve", "The percentage of the time the memory unit is stalled.", {Block::sq, 0x64, false}, {Block::sq, 0xd, false}),
+	new DivSumCounter("salu_active", "The percentage of the time the memory unit is stalled.", {Block::sq, 0x48, false}, {Block::sq, 0xd, false}),
+	new DivSumCounter("salu_busy", "The percentage of the time the memory unit is stalled.", {Block::sq, 0x54, false}, {Block::sq, 0xd, false}),
+};
+
+std::string HumanRate(double v) {
+       if (v >= 1e18)
+               return std::to_string(v / 1e18) + " E/s";
+       if (v >= 1e15)
+               return std::to_string(v / 1e15) + " P/s";
+       if (v >= 1e12)
+               return std::to_string(v / 1e12) + " T/s";
+       if (v >= 1e9)
+               return std::to_string(v / 1e9) + " G/s";
+       else if (v >= 1e6)
+               return std::to_string(v / 1e6) + " M/s";
+       else if (v >= 1e3)
+               return std::to_string(v / 1e3) + " K/s";
+       else
+               return std::to_string(v) + " 1/s";
+}
+
+
 int main(int argc, char **argv) {
   auto device =
       NativeDevice::New(open("/dev/dri/renderD129", O_RDWR | O_CLOEXEC));
 
-
-
-  CounterConfig cfg;
-  std::set<std::string> counter_args;
-  for (int i = 1; i < argc; ++i) {
-    cfg.counters.push_back(argv[i]);
-    counter_args.insert(argv[i]);
-  }
-  SQCounters sq_counters(counter_args);
-  SPICounters spi_counters(counter_args);
-  TCCCounters tcc_counters(counter_args);
-  GRBMCounters grbm_counters(counter_args);
   std::vector<CounterInterface*> counters;
-  counters.push_back(&sq_counters);
-  counters.push_back(&spi_counters);
-  counters.push_back(&tcc_counters);
-  counters.push_back(&grbm_counters);
+  for (int i = 1; i < argc; ++i) {
+    for (auto e : counter_list)
+	    if (e->name() == argv[i])
+		    counters.push_back(e);
+  }
 
+  std::set<HWCounterEntry> entries;
+  std::map<std::uint32_t, std::map<unsigned, std::uint32_t>> reg_config;
+  std::map<std::uint32_t, std::map<unsigned, std::uint32_t>> sample_map;
+  std::map<HWCounterEntry, std::pair<unsigned, unsigned>> entry_map;
   uint64_t size = 0;
-  for(auto c : counters)
-	  size += c->GetBufferSize();
+
+  for(auto e : counters)
+	  e->register_counters(entries);
+
+  ComputeHwConfiguration(entries, reg_config, sample_map, entry_map, size);
   size = (size + 4095) & ~4095;
-  if (size == 0)
-	  abort();
+  if (size == 0) {
+	  size = 4096;
+  }
   NativeBuffer buffer{device, size, 4096, drm::Domain::kGtt,
                       drm::BufferFlags::kCpuAccess};
   NativeBuffer buffer2{device, size, 4096, drm::Domain::kGtt,
                       drm::BufferFlags::kCpuAccess};
 
-  auto start_cb = BuildStartBuffer(device, cfg, counters);
-  auto sample_cb = BuildSampleBuffer(device, buffer, cfg, counters);
-  auto sample_cb2 = BuildSampleBuffer(device, buffer2, cfg, counters);
+  auto start_cb = BuildStartBuffer(device, reg_config);
+  auto sample_cb = BuildSampleBuffer(device, buffer, sample_map);
+  auto sample_cb2 = BuildSampleBuffer(device, buffer2, sample_map);
 
   device->Submit(start_cb.get());
   std::uint64_t *p = reinterpret_cast<std::uint64_t *>(buffer.Map());
@@ -615,10 +575,8 @@ int main(int argc, char **argv) {
     sleep(1);
     auto new_p = (iter & 1) ? p2 : p;
     auto old_p = (iter & 1) ? p : p2;
-    for (auto c : counters) {
-	    c->PrintDifference(old_p, new_p, 1.0, std::cout);
-	    new_p += c->GetBufferSize() / 8;
-	    old_p += c->GetBufferSize() / 8;
+    for(auto e : counters) {
+	    std::cout << e->name() << ": " << HumanRate(e->get_results(entry_map, old_p, new_p)) << "\n";
     }
 
   }
