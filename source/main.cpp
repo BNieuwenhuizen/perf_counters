@@ -13,6 +13,7 @@
 
 
 enum class Block {
+	cpg,
 	grbm,
 	pa_su,
 	sq,
@@ -53,6 +54,13 @@ bool operator<(const HWCounterEntry& a, const HWCounterEntry& b) {
 }
 
 const BlockInfo gfx9_blocks[] = {
+	{Block::cpg, 2, BLOCK_NONE, {
+		R_036008_CPG_PERFCOUNTER0_SELECT,
+		R_036000_CPG_PERFCOUNTER1_SELECT,
+	}, {
+		{R_034008_CPG_PERFCOUNTER0_LO, R_03400C_CPG_PERFCOUNTER0_HI},
+		{R_034000_CPG_PERFCOUNTER1_LO, R_034004_CPG_PERFCOUNTER1_HI},
+	}},
 	{Block::grbm, 2, BLOCK_NONE, {
 		R_036100_GRBM_PERFCOUNTER0_SELECT,
 		R_036104_GRBM_PERFCOUNTER1_SELECT,
@@ -503,13 +511,26 @@ CounterInterface *counter_list[] = {
 	new MaxCounter("sq_busy_cycles", "Amount of cycles the SQ unit is busy.", {Block::sq, 3, false}),
 	new DivMaxCounter("mem_unit_busy", "The percentage of the time the memory unit is busy, including stalls.", {Block::ta, 0xf, false}, {Block::grbm, 2, false}),
 	new DivMaxCounter("mem_unit_stalled", "The percentage of the time the memory unit is stalled.", {Block::tcp, 0x6, false}, {Block::grbm, 2, false}),
-	new DivMaxCounter("pixel_export_stalled", "The percentage of the time the memory unit is stalled.", {Block::sx, 0xe, false}, {Block::grbm, 2, false}), // Hack, need 4 counters for full view
-	new DivMaxCounter("primitive_assembly_stalled_on_rasterizer", "The percentage of the time the memory unit is stalled.", {Block::pa_su, 0x6d, false}, {Block::grbm, 2, false}),
-	new DivSumCounter("cu_busy", "The percentage of the time the memory unit is stalled.", {Block::sq, 0xd, false}, {Block::grbm, 2, false}, 4.0/64.0),
-	new DivSumCounter("valu_busy", "The percentage of the time the memory unit is stalled.", {Block::sq, 0x47, false}, {Block::sq, 0xd, false}),
-	new DivSumCounter("valu_starve", "The percentage of the time the memory unit is stalled.", {Block::sq, 0x64, false}, {Block::sq, 0xd, false}),
-	new DivSumCounter("salu_active", "The percentage of the time the memory unit is stalled.", {Block::sq, 0x48, false}, {Block::sq, 0xd, false}),
-	new DivSumCounter("salu_busy", "The percentage of the time the memory unit is stalled.", {Block::sq, 0x54, false}, {Block::sq, 0xd, false}),
+	new DivMaxCounter("pixel_export_stalled", "The percentage of the time pixel export are stalled on something downstream (late Z, color buffer, ...).", {Block::sx, 0xe, false}, {Block::grbm, 2, false}), // Hack, need 4 counters for full view
+	new DivMaxCounter("primitive_assembly_stalled_on_rasterizer", "The percentage of the time primitive assembly is stalled on the rasterizer.", {Block::pa_su, 0x6d, false}, {Block::grbm, 2, false}),
+	new DivMaxCounter("me_stalled_on_free_gfx_context", "The percentage of the time the ME is waiting for an available context for a context roll.", {Block::cpg, 0x19, false}, {Block::grbm, 2, false}),
+	new DivMaxCounter("me_stalled_on_partial_flush", "The percentage of the time the Me is waiting for a partial flush.", {Block::cpg, 0x1c, false}, {Block::grbm, 2, false}),
+	new DivSumCounter("cu_busy", "The percentage of the time the CUs are busy.", {Block::sq, 0xd, false}, {Block::grbm, 2, false}, 4.0/64.0),
+	new DivSumCounter("valu_busy", "The percentage of CU-time the VALU is busy.", {Block::sq, 0x47, false}, {Block::sq, 0xd, false}),
+	new DivSumCounter("exp_busy", "The percentage of CU-time the export units are busy", {Block::sq, 0x49, false}, {Block::sq, 0xd, false}),
+	new DivSumCounter("lds_bank_conflict", "The percentage of CU-time there is a LDS bank conflict.", {Block::sq, 0x61, false}, {Block::sq, 0xd, false}),
+	new DivSumCounter("lds_addr_conflict", "The percentage of CU-time there is a LDS address conflict.", {Block::sq, 0x62, false}, {Block::sq, 0xd, false}),
+	new DivSumCounter("valu_starve", "The percentage of CU-time the VALU units are idle with waves running.", {Block::sq, 0x64, false}, {Block::sq, 0xd, false}),
+	new DivSumCounter("salu_busy", "The percentage of CU-time the SALU units are busy.", {Block::sq, 0x54, false}, {Block::sq, 0xd, false}),
+	new DivSumCounter("wave_ready", "The percentage of wave-time there is an instruction ready to issue.", {Block::sq, 0x2f, false}, {Block::sq, 0x2e, false}),
+	new DivSumCounter("wave_wait_cnt_vmem", "The percentage of wave-time spent waiting on the VMEM counter.", {Block::sq, 0x30, false}, {Block::sq, 0x2e, false}),
+	new DivSumCounter("wave_wait_cnt_any", "The percentage of wave-time spent waiting on any of the counters.", {Block::sq, 0x33, false}, {Block::sq, 0x2e, false}),
+	new DivSumCounter("wave_wait_barrier", "The percentage of wave-time spent waiting on a barrier.", {Block::sq, 0x34, false}, {Block::sq, 0x2e, false}),
+	new DivSumCounter("wave_wait_exp_alloc", "The percentage of wave-time waiting on space in the export FIFO to be available.", {Block::sq, 0x35, false}, {Block::sq, 0x2e, false}),
+	new DivSumCounter("wave_wait_other", "The percentage of wave-time spent waiting on dependency stalls.", {Block::sq, 0x38, false}, {Block::sq, 0x2e, false}),
+	new DivSumCounter("wave_wait_any", "The percentage of wave-time spent waiting.", {Block::sq, 0x39, false}, {Block::sq, 0x2e, false}),
+	new DivSumCounter("wave_wait_ifetch", "The percentage of wave-time spent waiting on an instruction fetch.", {Block::sq, 0x3b, false}, {Block::sq, 0x2e, false}),
+	new DivSumCounter("wave_wait_inst_any", "The percentage of wave-time spent waiting on an instruction issue slot.", {Block::sq, 0x3c, false}, {Block::sq, 0x2e, false}),
 };
 
 std::string HumanRate(double v) {
