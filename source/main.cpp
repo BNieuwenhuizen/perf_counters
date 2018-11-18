@@ -30,6 +30,12 @@ enum BlockFlag {
 	BLOCK_INSTANCE_INDEXED = 2,
 };
 
+
+enum class CounterType {
+	rate,
+	percentage,
+};
+
 const unsigned maxCountersPerBlock = 16;
 struct BlockInfo {
 	Block block;
@@ -369,24 +375,26 @@ BuildSampleBuffer(D &&device, NativeBuffer &buffer,
 
 class CounterInterface  {
 public:
-	CounterInterface(const std::string& name, const std::string& description) : name_{name}, description_{description} {}
+	CounterInterface(const std::string& name, const std::string& description, CounterType type) : name_{name}, description_{description}, type_{type} {}
 	virtual ~CounterInterface();
 
 	std::string const& name() const { return name_; }
 	std::string const& description() const { return description_; }
+	CounterType type() const { return type_; }
 
 	virtual void register_counters(std::set<HWCounterEntry>& entries) const = 0;
 	virtual double get_results(std::map<HWCounterEntry, std::pair<unsigned, unsigned>> const& entry_map, const uint64_t *old_p, const uint64_t *new_p) const = 0;
 private:
 	std::string name_;
 	std::string description_;
+	CounterType type_;
 };
 
 CounterInterface::~CounterInterface() {}
 
 class SumCounter : public CounterInterface{
 public:
-	SumCounter(const std::string& name, const std::string& description, HWCounterEntry entry) : CounterInterface(name, description), entry_{entry} {}
+	SumCounter(const std::string& name, const std::string& description, HWCounterEntry entry) : CounterInterface(name, description, CounterType::rate), entry_{entry} {}
 
 	void register_counters(std::set<HWCounterEntry>& entries) const
 	{
@@ -411,7 +419,7 @@ private:
 
 class MaxCounter : public CounterInterface{
 public:
-	MaxCounter(const std::string& name, const std::string& description, HWCounterEntry entry) : CounterInterface(name, description), entry_{entry} {}
+	MaxCounter(const std::string& name, const std::string& description, HWCounterEntry entry) : CounterInterface(name, description, CounterType::rate), entry_{entry} {}
 
 	void register_counters(std::set<HWCounterEntry>& entries) const
 	{
@@ -436,7 +444,7 @@ private:
 
 class DivMaxCounter : public CounterInterface{
 public:
-	DivMaxCounter(const std::string& name, const std::string& description, HWCounterEntry a, HWCounterEntry b) : CounterInterface(name, description), a_{a}, b_{b} {}
+	DivMaxCounter(const std::string& name, const std::string& description, HWCounterEntry a, HWCounterEntry b) : CounterInterface(name, description, CounterType::percentage), a_{a}, b_{b} {}
 
 	void register_counters(std::set<HWCounterEntry>& entries) const
 	{
@@ -471,7 +479,7 @@ private:
 
 class DivSumCounter : public CounterInterface{
 public:
-	DivSumCounter(const std::string& name, const std::string& description, HWCounterEntry a, HWCounterEntry b, double extra_factor = 1.0) : CounterInterface(name, description), a_{a}, b_{b}, extra_factor_{extra_factor} {}
+	DivSumCounter(const std::string& name, const std::string& description, HWCounterEntry a, HWCounterEntry b, double extra_factor = 1.0) : CounterInterface(name, description, CounterType::percentage), a_{a}, b_{b}, extra_factor_{extra_factor} {}
 
 	void register_counters(std::set<HWCounterEntry>& entries) const
 	{
@@ -597,7 +605,13 @@ int main(int argc, char **argv) {
     auto new_p = (iter & 1) ? p2 : p;
     auto old_p = (iter & 1) ? p : p2;
     for(auto e : counters) {
-	    std::cout << e->name() << ": " << HumanRate(e->get_results(entry_map, old_p, new_p)) << "\n";
+	    double result = e->get_results(entry_map, old_p, new_p);
+	    std::cout << e->name() << ": ";
+	    if (e->type() == CounterType::rate)
+		    std::cout << HumanRate(result);
+	    else if(e->type() == CounterType::percentage)
+		    std::cout << result << " %";
+	    std::cout << "\n";
     }
 
   }
