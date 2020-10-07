@@ -22,6 +22,7 @@ enum class Block {
 	td,
 	tcp,
 	tcc,
+	gl2c,
 };
 
 enum BlockFlag {
@@ -159,6 +160,17 @@ const BlockInfo gfx9_blocks[] = {
 		{R_034E08_TCC_PERFCOUNTER1_LO, R_034E0C_TCC_PERFCOUNTER1_HI},
 		{R_034E10_TCC_PERFCOUNTER2_LO, R_034E14_TCC_PERFCOUNTER2_HI},
 		{R_034E18_TCC_PERFCOUNTER3_LO, R_034E1C_TCC_PERFCOUNTER3_HI},
+	}},
+	{Block::gl2c, 4, BLOCK_INSTANCE_INDEXED, {
+		0x36e00,
+		0x36e08,
+		0x36e10,
+		0x36e14,
+	}, {
+		{0x34e00, 0x34e04},
+		{0x34e08, 0x34e0c},
+		{0x34e10, 0x34e14},
+		{0x34e18, 0x34e1c},
 	}},
 };
 
@@ -513,6 +525,36 @@ private:
 	double extra_factor_;
 };
 
+class LinearSumCounter : public CounterInterface {
+public:
+	LinearSumCounter(const std::string& name, const std::string& description, std::vector<HWCounterEntry> entries, std::vector<double> scales) : CounterInterface(name, description, CounterType::rate), entries_{std::move(entries)}, scales_{std::move(scales)} {}
+
+	void register_counters(std::set<HWCounterEntry>& entries) const
+	{
+		for (auto e : entries_)
+			entries.insert(e);
+	}
+
+	double get_results(std::map<HWCounterEntry, std::pair<unsigned, unsigned>> const& entry_map, const uint64_t *old_p, const uint64_t *new_p) const
+	{
+		double ret = 0.0;
+		for (unsigned i = 0; i < entries_.size(); ++i) {
+			double v = 0.0;
+			auto it = entry_map.find(entries_[i]);
+			assert(it != entry_map.end());
+			for(unsigned j = 0; j < it->second.second; ++j) {
+				double v2 = new_p[it->second.first + j] - old_p[it->second.first + j];
+				v += v2;
+			}
+			ret += v * scales_[i];
+		}
+		return ret;
+	}
+private:
+	std::vector<HWCounterEntry> entries_;
+	std::vector<double> scales_;
+};
+
 
 CounterInterface *counter_list[] = {
 	new MaxCounter("gui_active", "Amount of cycles the GPU is busy.", {Block::grbm, 2, false}),
@@ -539,6 +581,35 @@ CounterInterface *counter_list[] = {
 	new DivSumCounter("wave_wait_any", "The percentage of wave-time spent waiting.", {Block::sq, 0x39, false}, {Block::sq, 0x2e, false}),
 	new DivSumCounter("wave_wait_ifetch", "The percentage of wave-time spent waiting on an instruction fetch.", {Block::sq, 0x3b, false}, {Block::sq, 0x2e, false}),
 	new DivSumCounter("wave_wait_inst_any", "The percentage of wave-time spent waiting on an instruction issue slot.", {Block::sq, 0x3c, false}, {Block::sq, 0x2e, false}),
+	new MaxCounter("gl2c_busy_cycles", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 2, false}),
+	new SumCounter("gl2c_fetch_32b", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x59, false}),
+	new SumCounter("gl2c_fetch_64b", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x5a, false}),
+	new SumCounter("gl2c_fetch_96b", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x5b, false}),
+	new SumCounter("gl2c_fetch_128b", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x5c, false}),
+	new SumCounter("gl2c_fetch_dram", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x64, false}),
+	new SumCounter("gl2c_fetch_dram_32b", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x66, false}),
+	new LinearSumCounter("gl2c_fetch", "Amount of cycles the GL2C unit is busy.", {{Block::gl2c, 0x59, false}, {Block::gl2c, 0x5a, false}, {Block::gl2c, 0x5b, false}, {Block::gl2c, 0x5c, false}}, {32.0,64.0,96.0,128.0}),
+	new LinearSumCounter("gl2c_write", "Amount of cycles the GL2C unit is busy.", {{Block::gl2c, 0x4b, false}, {Block::gl2c, 0x4c, false}}, {32.0,32.0}),
+	new LinearSumCounter("vram_read_bytes", "", {{Block::gl2c, 0x66, false}}, {32.0}),
+	new LinearSumCounter("vram_write_bytes", "", {{Block::gl2c, 0x67, false}}, {32.0}),
+	new SumCounter("gl2c_read_32_req", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x41, false}),
+	new SumCounter("gl2c_read_64_req", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x42, false}),
+	new SumCounter("gl2c_read_128_req", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x43, false}),
+	new SumCounter("gl2c_write_32_req", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x44, false}),
+	new SumCounter("gl2c_write_64_req", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0x45, false}),
+	new SumCounter("gl2c_mdc_req", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xa9, false}),
+	new SumCounter("gl2c_mdc_level", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xaa, false}),
+	new SumCounter("gl2c_mdc_tag_stall", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xae, false}),
+	new SumCounter("gl2c_mdc_tag_replacement_stall", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xaf, false}),
+	new SumCounter("gl2c_mdc_tag_fifo_stall", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xb0, false}),
+	new SumCounter("gl2c_mdc_tag_invalidate_stall", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xb1, false}),
+	new SumCounter("gl2c_cm_comp_color_en_req", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xdf, false}),
+	new SumCounter("gl2c_cm_comp_color_dis_req", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xe0, false}),
+	new SumCounter("gl2c_cm_full_write_req", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xe6, false}),
+	new SumCounter("gl2c_cm_rvf_full", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xe7, false}),
+	new SumCounter("gl2c_cm_sdr_full", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xe8, false}),
+	new SumCounter("gl2c_cm_merge_buf_full", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xe9, false}),
+	new SumCounter("gl2c_dcc_stall", "Amount of cycles the GL2C unit is busy.", {Block::gl2c, 0xea, false}),
 };
 
 std::string HumanRate(double v) {
