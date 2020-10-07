@@ -632,7 +632,7 @@ std::string HumanRate(double v) {
 
 int main(int argc, char **argv) {
   auto device =
-      NativeDevice::New(open("/dev/dri/renderD129", O_RDWR | O_CLOEXEC));
+      NativeDevice::New(open("/dev/dri/renderD128", O_RDWR | O_CLOEXEC));
 
   std::vector<CounterInterface*> counters;
   for (int i = 1; i < argc; ++i) {
