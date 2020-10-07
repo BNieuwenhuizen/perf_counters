@@ -251,7 +251,7 @@ void ComputeHwConfiguration(const std::set<HWCounterEntry>& entries,
 
 void EmitUConfigRegs(NativeCommandBuffer &cmd_buffer, std::uint32_t reg,
                      std::uint32_t count) {
-  cmd_buffer.Emit(PKT3(PKT3_SET_UCONFIG_REG, count, 0));
+  cmd_buffer.Emit(PKT3(PKT3_SET_UCONFIG_REG, count, 1));
   cmd_buffer.Emit((reg - CIK_UCONFIG_REG_OFFSET) >> 2);
 }
 
