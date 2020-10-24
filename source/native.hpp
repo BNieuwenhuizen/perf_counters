@@ -79,6 +79,8 @@ public:
 
   drm::Fence Submit(NativeCommandBuffer *ncb);
 
+  double ClockFrequency() const;
+
 private:
   explicit NativeDevice(int fd);
   drm::Device drm_;

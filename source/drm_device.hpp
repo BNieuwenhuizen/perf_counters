@@ -80,6 +80,7 @@ struct SubmitArgs {
 struct DeviceInfo {
   std::uint64_t virtual_address_start;
   std::uint64_t virtual_address_end;
+  double clock_freq;
 };
 
 class Device {

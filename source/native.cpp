@@ -118,3 +118,7 @@ drm::Fence NativeDevice::Submit(NativeCommandBuffer *ncb) {
   drm_.DestroyBufferList(args.buffers);
   return ret;
 }
+
+double NativeDevice::ClockFrequency() const {
+  return info_.clock_freq;
+}

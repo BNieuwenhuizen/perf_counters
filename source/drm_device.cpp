@@ -78,6 +78,7 @@ DeviceInfo Device::GetInfo() {
 
   info.virtual_address_start = amdgpu_device_info.virtual_address_offset;
   info.virtual_address_end = amdgpu_device_info.virtual_address_max;
+  info.clock_freq = amdgpu_device_info.gpu_counter_freq * 1e3;
   return info;
 }
 

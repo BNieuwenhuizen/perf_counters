@@ -215,7 +215,7 @@ void ComputeHwConfiguration(const std::set<HWCounterEntry>& entries,
 			    uint64_t& size)
 {
 	std::map<Block, unsigned> block_count;
-	unsigned offset = 0;
+	unsigned offset = 1;
 	for(auto entry : entries) {
 		const BlockInfo& info = find_block(entry.block);
 		unsigned& block_idx = block_count[entry.block];
@@ -391,6 +391,16 @@ BuildSampleBuffer(D &&device, NativeBuffer &buffer,
   EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
   ncb->Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_SE_BROADCAST_WRITES(1) |
             S_030800_INSTANCE_BROADCAST_WRITES(1));
+
+  /* Grab a GPU timestamp as well so we can put them on a timeline. */
+  ncb->Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(0));
+  ncb->Emit(COPY_DATA_COUNT_SEL | COPY_DATA_WR_CONFIRM |
+            COPY_DATA_SRC_SEL(9) | COPY_DATA_DST_SEL(5));
+  ncb->Emit(0);
+  ncb->Emit(0); /* unused */
+  ncb->Emit(va);
+  ncb->Emit(va >> 32);
+
   ncb->FinishRecording();
   return ncb;
 }
@@ -685,11 +695,12 @@ int main(int argc, char **argv) {
     sleep(1);
     auto new_p = (iter & 1) ? p2 : p;
     auto old_p = (iter & 1) ? p : p2;
+    double tdiff = (*new_p - *old_p)/device->ClockFrequency();
     for(auto e : counters) {
 	    double result = e->get_results(entry_map, old_p, new_p);
 	    std::cout << e->name() << ": ";
 	    if (e->type() == CounterType::rate)
-		    std::cout << HumanRate(result);
+		    std::cout << HumanRate(result/tdiff);
 	    else if(e->type() == CounterType::percentage)
 		    std::cout << result << " %";
 	    std::cout << "\n";
