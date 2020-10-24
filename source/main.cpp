@@ -255,6 +255,11 @@ void EmitUConfigRegs(NativeCommandBuffer &cmd_buffer, std::uint32_t reg,
   cmd_buffer.Emit((reg - CIK_UCONFIG_REG_OFFSET) >> 2);
 }
 
+void EmitShaderRegs(NativeCommandBuffer &cmd_buffer, std::uint32_t reg,
+                     std::uint32_t count) {
+  cmd_buffer.Emit(PKT3(PKT3_SET_SH_REG, count, 0));
+  cmd_buffer.Emit((reg - SI_SH_REG_OFFSET) >> 2);
+}
 
 #define EVENT_TYPE_SAMPLE_PIPELINESTAT 30
 #define EVENT_TYPE_PERFCOUNTER_START 0x17
@@ -265,8 +270,9 @@ void EmitUConfigRegs(NativeCommandBuffer &cmd_buffer, std::uint32_t reg,
 template <typename D>
 std::unique_ptr<NativeCommandBuffer>
 BuildStartBuffer(D &&device, const std::map<std::uint32_t, std::map<unsigned, std::uint32_t>>& reg_config) {
+  drm::HwType type = drm::HwType::kCompute;
   auto ncb =
-      std::make_unique<NativeCommandBuffer>(device, drm::HwType::kGfx);
+      std::make_unique<NativeCommandBuffer>(device, type);
 
   ncb->StartRecording();
 
@@ -302,9 +308,13 @@ BuildStartBuffer(D &&device, const std::map<std::uint32_t, std::map<unsigned, st
   EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
   ncb->Emit(S_036020_PERFMON_STATE(V_036020_DISABLE_AND_RESET));
 
-  ncb->Emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
-  ncb->Emit(EVENT_TYPE(EVENT_TYPE_PERFCOUNTER_START) | EVENT_INDEX(0));
+  if (type == drm::HwType::kGfx) {
+    ncb->Emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
+    ncb->Emit(EVENT_TYPE(EVENT_TYPE_PERFCOUNTER_START) | EVENT_INDEX(0));
+  }
 
+  EmitShaderRegs(*ncb, R_00B82C_COMPUTE_PERFCOUNT_ENABLE, 1);
+  ncb->Emit(S_00B82C_PERFCOUNT_ENABLE(1));
 
   EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
   ncb->Emit(S_036020_PERFMON_STATE(V_036020_START_COUNTING) |
@@ -343,7 +353,7 @@ std::unique_ptr<NativeCommandBuffer>
 BuildSampleBuffer(D &&device, NativeBuffer &buffer,
                   const std::map<std::uint32_t, std::map<unsigned, std::uint32_t>>& sample_map) {
   auto ncb =
-      std::make_unique<NativeCommandBuffer>(device, drm::HwType::kGfx);
+      std::make_unique<NativeCommandBuffer>(device, drm::HwType::kCompute);
   ncb->StartRecording();
 
   EmitUConfigRegs(*ncb, R_036780_SQ_PERFCOUNTER_CTRL, 2);
