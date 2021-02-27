@@ -179,6 +179,7 @@ const BlockInfo& find_block(Block b)
 	for(const auto& block : gfx9_blocks)
 		if (block.block == b)
 			return block;
+	throw std::domain_error("Looking for invalid block");
 }
 
 void insert_config_reg(unsigned reg, std::uint32_t value, unsigned flags, 
@@ -688,7 +689,6 @@ int main(int argc, char **argv) {
   device->Submit(start_cb.get());
   std::uint64_t *p = reinterpret_cast<std::uint64_t *>(buffer.Map());
   std::uint64_t *p2 = reinterpret_cast<std::uint64_t *>(buffer2.Map());
-  uint64_t sq_prev[16] = {};
   for (unsigned long long iter = 0;; ++iter) {
     auto fence = device->Submit((iter & 1) ? sample_cb2.get() : sample_cb.get());
     std::cout << "results:\n";
