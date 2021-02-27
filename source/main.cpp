@@ -577,6 +577,7 @@ private:
 
 
 CounterInterface *counter_list[] = {
+	new MaxCounter("gui_elapsed", "Amount of cycles elapsed.", {Block::grbm, 0, false}),
 	new MaxCounter("gui_active", "Amount of cycles the GPU is busy.", {Block::grbm, 2, false}),
 	new MaxCounter("sq_busy_cycles", "Amount of cycles the SQ unit is busy.", {Block::sq, 3, false}),
 	new DivMaxCounter("mem_unit_busy", "The percentage of the time the memory unit is busy, including stalls.", {Block::ta, 0xf, false}, {Block::grbm, 2, false}),
