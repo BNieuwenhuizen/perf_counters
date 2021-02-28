@@ -50,13 +50,38 @@ template <typename T> T QueryInfo(int fd, unsigned kind) {
   WriteIoctl(fd, DRM_AMDGPU_INFO, request);
   return ret;
 }
+
+Generation DetermineGeneration(const drm_amdgpu_info_device& info) {
+  switch(info.family) {
+    case AMDGPU_FAMILY_SI:
+      return Generation::GFX6;
+    case AMDGPU_FAMILY_CI:
+    case AMDGPU_FAMILY_KV:
+      return Generation::GFX7;
+    case AMDGPU_FAMILY_VI:
+    case AMDGPU_FAMILY_CZ:
+      return Generation::GFX8;
+    case AMDGPU_FAMILY_AI:
+    case AMDGPU_FAMILY_RV:
+      return Generation::GFX9;
+    case AMDGPU_FAMILY_NV:
+      return (info.external_rev >= 0x28) ? Generation::GFX10_3 : Generation::GFX10;
+    case AMDGPU_FAMILY_VGH:
+      return Generation::GFX10_3;
+    default:
+      throw std::domain_error("Unhandled chipp generation");
+  }
+}
+
 }
 
 Device::Device() noexcept : fd_{-1} {}
 
-Device::Device(int fd) noexcept : fd_{fd} {}
+Device::Device(int fd) noexcept : fd_{fd} {
+  gen_ = DetermineGeneration(QueryInfo<drm_amdgpu_info_device>(fd, AMDGPU_INFO_DEV_INFO));
+}
 
-Device::Device(Device &&other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
+Device::Device(Device &&other) noexcept : fd_{other.fd_}, gen_{other.gen_} { other.fd_ = -1; }
 
 Device &Device::operator=(Device &&other) noexcept {
   if (this != &other)

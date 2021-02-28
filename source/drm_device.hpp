@@ -8,6 +8,15 @@ using Buffer = std::uint32_t;
 using BufferList = std::uint32_t;
 using SubmitSequence = std::uint64_t;
 
+enum class Generation {
+  GFX6,
+  GFX7,
+  GFX8,
+  GFX9,
+  GFX10,
+  GFX10_3,
+};
+
 enum class Domain : std::uint32_t {
   kNone = 0,
   kCpu = 1,
@@ -96,6 +105,7 @@ public:
   bool IsValid() const noexcept;
 
   DeviceInfo GetInfo();
+  Generation GetGeneration() const noexcept { return gen_; }
 
   Context CreateContext();
   void DestroyContext(Context ctx);
@@ -120,6 +130,7 @@ public:
 
 private:
   int fd_;
+  Generation gen_;
 };
 
 inline Domain operator|(Domain a, Domain b) noexcept {
