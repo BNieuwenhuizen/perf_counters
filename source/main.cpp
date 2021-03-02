@@ -388,18 +388,18 @@ BuildSampleBuffer(D &&device, NativeBuffer &buffer,
   ncb->AddBuffer(buffer.Handle());
   uint64_t va = buffer.Address();
   for(auto&& entry : sample_map) {
-	EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
-	ncb->Emit(entry.first);
+    EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
+    ncb->Emit(entry.first);
 
-	for (auto e : entry.second) {
-		auto dst_va = va + e.second;
-		ncb->Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
-		ncb->Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
-		ncb->Emit(e.first >> 2);
-		ncb->Emit(0); /* unused */
-		ncb->Emit(dst_va);
-		ncb->Emit(dst_va >> 32);
-	}
+    for (auto e : entry.second) {
+      auto dst_va = va + e.second;
+      ncb->Emit(PKT3(PKT3_COPY_DATA, 4, 0) | PKT3_SHADER_TYPE_S(1));
+      ncb->Emit(COPY_DATA_SRC_SEL(COPY_DATA_PERF) | COPY_DATA_DST_SEL(5));
+      ncb->Emit(e.first >> 2);
+      ncb->Emit(0); /* unused */
+      ncb->Emit(dst_va);
+      ncb->Emit(dst_va >> 32);
+    }
   }
 
   EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
