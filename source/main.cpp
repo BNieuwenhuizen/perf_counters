@@ -284,23 +284,23 @@ BuildStartBuffer(D &&device, const std::map<std::uint32_t, std::map<unsigned, st
             S_030800_INSTANCE_BROADCAST_WRITES(1));
 
   for (auto&& entry : reg_config) {
-	EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
-	ncb->Emit(entry.first);
+    EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
+    ncb->Emit(entry.first);
 
-	for (auto b = entry.second.begin(); b != entry.second.end(); ) {
-		auto e = b;
-		unsigned next_addr = b->first + 4;
-		++e;
-		while (e != entry.second.end() && e->first == next_addr) {
-			++e;
-			next_addr += 4;
-		}
+    for (auto b = entry.second.begin(); b != entry.second.end(); ) {
+      auto e = b;
+      unsigned next_addr = b->first + 4;
+      ++e;
+      while (e != entry.second.end() && e->first == next_addr) {
+        ++e;
+        next_addr += 4;
+      }
 
-		EmitUConfigRegs(*ncb, b->first, std::distance(b, e));
-		for (auto it = b; it != e; ++it)
-			ncb->Emit(it->second);
-		b = e;
-	}
+      EmitUConfigRegs(*ncb, b->first, std::distance(b, e));
+      for (auto it = b; it != e; ++it)
+        ncb->Emit(it->second);
+      b = e;
+    }
   }
 
   EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
