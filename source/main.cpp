@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+#include "amdgfxregs.h"
 #include "sid.h"
 
 
@@ -307,7 +308,7 @@ BuildStartBuffer(D &&device, const std::map<std::uint32_t, std::map<unsigned, st
             S_030800_INSTANCE_BROADCAST_WRITES(1));
 
   EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
-  ncb->Emit(S_036020_PERFMON_STATE(V_036020_DISABLE_AND_RESET));
+  ncb->Emit(S_036020_PERFMON_STATE(V_036020_CP_PERFMON_STATE_DISABLE_AND_RESET));
 
   if (type == drm::HwType::kGfx) {
     ncb->Emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
@@ -318,7 +319,7 @@ BuildStartBuffer(D &&device, const std::map<std::uint32_t, std::map<unsigned, st
   ncb->Emit(S_00B82C_PERFCOUNT_ENABLE(1));
 
   EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
-  ncb->Emit(S_036020_PERFMON_STATE(V_036020_START_COUNTING) |
+  ncb->Emit(S_036020_PERFMON_STATE(V_036020_CP_PERFMON_STATE_START_COUNTING) |
             S_036020_PERFMON_SAMPLE_ENABLE(1));
 
   for (auto&& entry : reg_config) {
@@ -366,7 +367,7 @@ BuildSampleBuffer(D &&device, NativeBuffer &buffer,
             S_030800_INSTANCE_BROADCAST_WRITES(1));
 
   EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
-  ncb->Emit(S_036020_PERFMON_STATE(V_036020_START_COUNTING) |
+  ncb->Emit(S_036020_PERFMON_STATE(V_036020_CP_PERFMON_STATE_START_COUNTING) |
             S_036020_PERFMON_SAMPLE_ENABLE(1));
 
   ncb->Emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
