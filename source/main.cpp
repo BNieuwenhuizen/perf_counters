@@ -282,16 +282,21 @@ void InhibitClockGating(NativeDevice& device, NativeCommandBuffer &ncb, bool inh
 template <typename D>
 std::unique_ptr<NativeCommandBuffer>
 BuildStartBuffer(D &&device, const std::map<std::uint32_t, std::map<unsigned, std::uint32_t>>& reg_config) {
-  drm::HwType type = drm::HwType::kCompute;
+  drm::HwType type = drm::HwType::kGfx;
   auto ncb =
       std::make_unique<NativeCommandBuffer>(device, type);
 
   ncb->StartRecording();
 
-
   EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
   ncb->Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_SE_BROADCAST_WRITES(1) |
             S_030800_INSTANCE_BROADCAST_WRITES(1));
+
+  EmitUConfigRegs(*ncb, R_036780_SQ_PERFCOUNTER_CTRL, 2);
+  ncb->Emit(0x7f);
+  ncb->Emit(0xFFFFFFFFU);
+
+  InhibitClockGating(*device, *ncb, true);
 
   for (auto&& entry : reg_config) {
     EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
@@ -320,8 +325,6 @@ BuildStartBuffer(D &&device, const std::map<std::uint32_t, std::map<unsigned, st
   EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
   ncb->Emit(S_036020_PERFMON_STATE(V_036020_CP_PERFMON_STATE_DISABLE_AND_RESET));
 
-  InhibitClockGating(*device, *ncb, true);
-
   if (type == drm::HwType::kGfx) {
     ncb->Emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
     ncb->Emit(EVENT_TYPE(EVENT_TYPE_PERFCOUNTER_START) | EVENT_INDEX(0));
@@ -332,31 +335,7 @@ BuildStartBuffer(D &&device, const std::map<std::uint32_t, std::map<unsigned, st
 
   EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
   ncb->Emit(S_036020_PERFMON_STATE(V_036020_CP_PERFMON_STATE_START_COUNTING) |
-            S_036020_PERFMON_SAMPLE_ENABLE(1));
-
-  for (auto&& entry : reg_config) {
-	EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
-	ncb->Emit(entry.first);
-
-	for (auto b = entry.second.begin(); b != entry.second.end(); ) {
-		auto e = b;
-		unsigned next_addr = b->first + 4;
-		++e;
-		while (e != entry.second.end() && e->first == next_addr) {
-			++e;
-			next_addr += 4;
-		}
-
-		EmitUConfigRegs(*ncb, b->first, std::distance(b, e));
-		for (auto it = b; it != e; ++it)
-			ncb->Emit(it->second);
-		b = e;
-	}
-  }
-
-  EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
-  ncb->Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_SE_BROADCAST_WRITES(1) |
-            S_030800_INSTANCE_BROADCAST_WRITES(1));
+            S_036020_PERFMON_SAMPLE_ENABLE(0));
 
   ncb->FinishRecording();
   return ncb;
@@ -366,24 +345,26 @@ template <typename D>
 std::unique_ptr<NativeCommandBuffer>
 BuildSampleBuffer(D &&device, NativeBuffer &buffer,
                   const std::map<std::uint32_t, std::map<unsigned, std::uint32_t>>& sample_map) {
+  auto type = drm::HwType::kGfx;
   auto ncb =
-      std::make_unique<NativeCommandBuffer>(device, drm::HwType::kCompute);
+      std::make_unique<NativeCommandBuffer>(device, type);
   ncb->StartRecording();
-
-  EmitUConfigRegs(*ncb, R_036780_SQ_PERFCOUNTER_CTRL, 2);
-  ncb->Emit(0x7f);
-  ncb->Emit(0xFFFFFFFFU);
 
   EmitUConfigRegs(*ncb, R_030800_GRBM_GFX_INDEX, 1);
   ncb->Emit(S_030800_SH_BROADCAST_WRITES(1) | S_030800_SE_BROADCAST_WRITES(1) |
             S_030800_INSTANCE_BROADCAST_WRITES(1));
 
-  EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
-  ncb->Emit(S_036020_PERFMON_STATE(V_036020_CP_PERFMON_STATE_START_COUNTING) |
-            S_036020_PERFMON_SAMPLE_ENABLE(1));
+  if (type == drm::HwType::kGfx) {
+    ncb->Emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
+    ncb->Emit(EVENT_TYPE(EVENT_TYPE_PERFCOUNTER_SAMPLE) | EVENT_INDEX(0));
 
-  ncb->Emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
-  ncb->Emit(EVENT_TYPE(EVENT_TYPE_PERFCOUNTER_SAMPLE) | EVENT_INDEX(0));
+    ncb->Emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
+    ncb->Emit(EVENT_TYPE(EVENT_TYPE_PERFCOUNTER_STOP) | EVENT_INDEX(0));
+  }
+
+  EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
+  ncb->Emit(S_036020_PERFMON_STATE(V_036020_CP_PERFMON_STATE_STOP_COUNTING) |
+            S_036020_PERFMON_SAMPLE_ENABLE(1));
 
   ncb->AddBuffer(buffer.Handle());
   uint64_t va = buffer.Address();
@@ -414,6 +395,18 @@ BuildSampleBuffer(D &&device, NativeBuffer &buffer,
   ncb->Emit(0); /* unused */
   ncb->Emit(va);
   ncb->Emit(va >> 32);
+
+  if (type == drm::HwType::kGfx) {
+    ncb->Emit(PKT3(PKT3_EVENT_WRITE, 0, 0));
+    ncb->Emit(EVENT_TYPE(EVENT_TYPE_PERFCOUNTER_START) | EVENT_INDEX(0));
+  }
+
+  EmitShaderRegs(*ncb, R_00B82C_COMPUTE_PERFCOUNT_ENABLE, 1);
+  ncb->Emit(S_00B82C_PERFCOUNT_ENABLE(1));
+
+  EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
+  ncb->Emit(S_036020_PERFMON_STATE(V_036020_CP_PERFMON_STATE_START_COUNTING) |
+            S_036020_PERFMON_SAMPLE_ENABLE(0));
 
   ncb->FinishRecording();
   return ncb;
