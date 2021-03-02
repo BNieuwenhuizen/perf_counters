@@ -263,6 +263,16 @@ void EmitShaderRegs(NativeCommandBuffer &cmd_buffer, std::uint32_t reg,
   cmd_buffer.Emit((reg - SI_SH_REG_OFFSET) >> 2);
 }
 
+void InhibitClockGating(NativeDevice& device, NativeCommandBuffer &ncb, bool inhibit) {
+  if (device.GetGeneration() >= drm::Generation::GFX10) {
+    EmitUConfigRegs(ncb, R_037390_RLC_PERFMON_CLK_CNTL, 1);
+    ncb.Emit(S_037390_PERFMON_CLOCK_STATE(inhibit));
+  } else if (device.GetGeneration() >= drm::Generation::GFX8) {
+    EmitUConfigRegs(ncb, R_0372FC_RLC_PERFMON_CLK_CNTL, 1);
+    ncb.Emit(S_0372FC_PERFMON_CLOCK_STATE(inhibit));
+  }
+}
+
 #define EVENT_TYPE_SAMPLE_PIPELINESTAT 30
 #define EVENT_TYPE_PERFCOUNTER_START 0x17
 #define EVENT_TYPE_PERFCOUNTER_STOP 0x18
@@ -309,6 +319,8 @@ BuildStartBuffer(D &&device, const std::map<std::uint32_t, std::map<unsigned, st
 
   EmitUConfigRegs(*ncb, R_036020_CP_PERFMON_CNTL, 1);
   ncb->Emit(S_036020_PERFMON_STATE(V_036020_CP_PERFMON_STATE_DISABLE_AND_RESET));
+
+  InhibitClockGating(*device, *ncb, true);
 
   if (type == drm::HwType::kGfx) {
     ncb->Emit(PKT3(PKT3_EVENT_WRITE, 0, 0));

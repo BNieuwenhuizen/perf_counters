@@ -122,3 +122,7 @@ drm::Fence NativeDevice::Submit(NativeCommandBuffer *ncb) {
 double NativeDevice::ClockFrequency() const {
   return info_.clock_freq;
 }
+
+drm::Generation NativeDevice::GetGeneration() const {
+  return drm_.GetGeneration();
+}

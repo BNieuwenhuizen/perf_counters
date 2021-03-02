@@ -80,6 +80,7 @@ public:
   drm::Fence Submit(NativeCommandBuffer *ncb);
 
   double ClockFrequency() const;
+  drm::Generation GetGeneration() const;
 
 private:
   explicit NativeDevice(int fd);
